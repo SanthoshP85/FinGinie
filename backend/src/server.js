@@ -34,12 +34,12 @@ const connectOnce = async () => {
 // Security middleware
 app.use(helmet());
 
-// CORS configuration
+// CORS configuration - origins from environment variable
 const allowedOrigins = [
   "http://localhost:5174",
   "http://localhost:5173",
-  "https://fin-ginie.vercel.app",
   process.env.CORS_ORIGIN,
+  process.env.FRONTEND_URL,
 ].filter(Boolean);
 
 app.use(
