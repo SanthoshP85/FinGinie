@@ -20,14 +20,13 @@ const goalRoutes = require("./routes/goalRoutes");
 
 const app = express();
 
-// Initialize application
-const initializeApp = async () => {
-  try {
+// Database connection state for serverless
+let isConnected = false;
+const connectOnce = async () => {
+  if (!isConnected) {
     await connectDB();
-    console.log("All services connected");
-  } catch (error) {
-    console.error("Failed to initialize services:", error);
-    process.exit(1);
+    isConnected = true;
+    console.log("Database connected");
   }
 };
 
@@ -57,6 +56,17 @@ const limiter = rateLimit({
 });
 app.use("/api/", limiter);
 
+// Database connection middleware (for serverless)
+app.use(async (req, res, next) => {
+  try {
+    await connectOnce();
+    next();
+  } catch (error) {
+    console.error("Database connection error:", error);
+    res.status(500).json({ success: false, message: "Database connection failed" });
+  }
+});
+
 // Request logging (development)
 if (process.env.NODE_ENV === "development") {
   app.use((req, res, next) => {
@@ -64,13 +74,6 @@ if (process.env.NODE_ENV === "development") {
     next();
   });
 }
-
-// API routes
-app.use("/api/auth", authRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/documents", documentRoutes);
-app.use("/api/user", userRoutes);
-app.use("/api/goals", goalRoutes);
 
 // Root endpoint
 app.get("/", (req, res) => {
@@ -96,16 +99,22 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// API routes
+app.use("/api/auth", authRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/documents", documentRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/goals", goalRoutes);
+
 // Error handler middleware
 app.use(errorHandler);
 
-// Start server
-const PORT = process.env.PORT || 5000;
-
-initializeApp().then(() => {
+// Start server (only in local development)
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`FinGinie server running on port ${PORT}`);
   });
-});
+}
 
 module.exports = app;
