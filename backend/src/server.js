@@ -11,31 +11,58 @@ const rateLimit = require("express-rate-limit");
 const connectDB = require("./config/database");
 const errorHandler = require("./middleware/errorHandler");
 
-// Routes
-const authRoutes = require("./routes/authRoutes");
-const chatRoutes = require("./routes/chatRoutes");
-const documentRoutes = require("./routes/documentRoutes");
-const userRoutes = require("./routes/userRoutes");
-const goalRoutes = require("./routes/goalRoutes");
-
 const app = express();
 
-// Initialize application
-const initializeApp = async () => {
-  try {
-    await connectDB();
-    console.log("All services connected");
-  } catch (error) {
-    console.error("Failed to initialize services:", error);
-    process.exit(1);
+// Lazy load routes to avoid initialization errors
+let authRoutes, chatRoutes, documentRoutes, userRoutes, goalRoutes;
+
+const loadRoutes = () => {
+  if (!authRoutes) {
+    authRoutes = require("./routes/authRoutes");
+    chatRoutes = require("./routes/chatRoutes");
+    documentRoutes = require("./routes/documentRoutes");
+    userRoutes = require("./routes/userRoutes");
+    goalRoutes = require("./routes/goalRoutes");
   }
+};
+
+// Database connection for serverless
+const connectOnce = async () => {
+  await connectDB();
 };
 
 // Security middleware
 app.use(helmet());
+
+// CORS configuration
+const allowedOrigins = [
+  "http://localhost:5174",
+  "http://localhost:5173",
+  "https://fin-ginie-8mpb.vercel.app",
+  process.env.CORS_ORIGIN,
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+console.log("Allowed CORS origins:", allowedOrigins);
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5174",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin matches any allowed origin
+      const isAllowed = allowedOrigins.some(allowed => {
+        return origin === allowed || origin.startsWith(allowed);
+      });
+      
+      if (isAllowed) {
+        return callback(null, true);
+      }
+      
+      console.log("CORS blocked origin:", origin);
+      return callback(null, false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -57,6 +84,19 @@ const limiter = rateLimit({
 });
 app.use("/api/", limiter);
 
+// Database connection middleware (for serverless)
+app.use(async (req, res, next) => {
+  try {
+    await connectOnce();
+    next();
+  } catch (error) {
+    console.error("Database connection error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Database connection failed" });
+  }
+});
+
 // Request logging (development)
 if (process.env.NODE_ENV === "development") {
   app.use((req, res, next) => {
@@ -64,13 +104,6 @@ if (process.env.NODE_ENV === "development") {
     next();
   });
 }
-
-// API routes
-app.use("/api/auth", authRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/documents", documentRoutes);
-app.use("/api/user", userRoutes);
-app.use("/api/goals", goalRoutes);
 
 // Root endpoint
 app.get("/", (req, res) => {
@@ -96,16 +129,37 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// API routes (lazy loaded)
+app.use("/api/auth", (req, res, next) => {
+  loadRoutes();
+  authRoutes(req, res, next);
+});
+app.use("/api/chat", (req, res, next) => {
+  loadRoutes();
+  chatRoutes(req, res, next);
+});
+app.use("/api/documents", (req, res, next) => {
+  loadRoutes();
+  documentRoutes(req, res, next);
+});
+app.use("/api/user", (req, res, next) => {
+  loadRoutes();
+  userRoutes(req, res, next);
+});
+app.use("/api/goals", (req, res, next) => {
+  loadRoutes();
+  goalRoutes(req, res, next);
+});
+
 // Error handler middleware
 app.use(errorHandler);
 
-// Start server
-const PORT = process.env.PORT || 5000;
-
-initializeApp().then(() => {
+// Start server (only in local development)
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`FinGinie server running on port ${PORT}`);
   });
-});
+}
 
 module.exports = app;

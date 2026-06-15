@@ -11,11 +11,13 @@ const Document = require("../models/Document");
 const { getPineconeService } = require("../utils/pineconeService");
 
 /**
- * Extract text from PDF
+ * Extract text from PDF buffer or file
  */
-const extractTextFromPDF = async (filePath) => {
+const extractTextFromPDF = async (bufferOrPath) => {
   try {
-    const dataBuffer = fs.readFileSync(filePath);
+    const dataBuffer = Buffer.isBuffer(bufferOrPath) 
+      ? bufferOrPath 
+      : fs.readFileSync(bufferOrPath);
     const data = await pdfParse(dataBuffer);
     return data.text;
   } catch (error) {
@@ -25,13 +27,16 @@ const extractTextFromPDF = async (filePath) => {
 };
 
 /**
- * Extract text from file based on type
+ * Extract text from file/buffer based on type
  */
-const extractText = async (filePath, mimeType) => {
+const extractText = async (bufferOrPath, mimeType) => {
   if (mimeType === "application/pdf") {
-    return await extractTextFromPDF(filePath);
+    return await extractTextFromPDF(bufferOrPath);
   } else if (mimeType === "text/plain") {
-    return fs.readFileSync(filePath, "utf-8");
+    if (Buffer.isBuffer(bufferOrPath)) {
+      return bufferOrPath.toString("utf-8");
+    }
+    return fs.readFileSync(bufferOrPath, "utf-8");
   } else {
     throw new Error(`Unsupported file type: ${mimeType}`);
   }
@@ -65,10 +70,10 @@ const chunkText = (text, chunkSize = 500, overlap = 50) => {
 /**
  * Process and vectorize document
  */
-const processDocument = async (document, filePath) => {
+const processDocument = async (document, bufferOrPath, isBuffer = false) => {
   try {
     // Extract text
-    const extractedText = await extractText(filePath, document.mimeType);
+    const extractedText = await extractText(bufferOrPath, document.mimeType);
 
     // Chunk text
     const chunks = chunkText(extractedText);
@@ -95,8 +100,10 @@ const processDocument = async (document, filePath) => {
     document.isProcessed = true;
     await document.save();
 
-    // Clean up uploaded file
-    fs.unlinkSync(filePath);
+    // Clean up uploaded file (only if using disk storage)
+    if (!isBuffer && typeof bufferOrPath === 'string' && fs.existsSync(bufferOrPath)) {
+      fs.unlinkSync(bufferOrPath);
+    }
 
     return document;
   } catch (error) {
@@ -111,10 +118,14 @@ const processDocument = async (document, filePath) => {
  */
 const uploadDocument = async (userId, file, category = "other") => {
   try {
+    // Determine if using memory storage (buffer) or disk storage (path)
+    const isBuffer = !!file.buffer;
+    const filename = file.filename || `document-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    
     // Create document record
     const document = new Document({
       userId,
-      filename: file.filename,
+      filename: filename,
       originalName: file.originalname,
       mimeType: file.mimetype,
       size: file.size,
@@ -123,8 +134,9 @@ const uploadDocument = async (userId, file, category = "other") => {
 
     await document.save();
 
-    // Process asynchronously
-    processDocument(document, file.path).catch((error) => {
+    // Process document with buffer or path
+    const bufferOrPath = isBuffer ? file.buffer : file.path;
+    processDocument(document, bufferOrPath, isBuffer).catch((error) => {
       console.error("Document processing failed:", error.message);
     });
 
