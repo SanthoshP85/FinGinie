@@ -34,22 +34,33 @@ const connectOnce = async () => {
 // Security middleware
 app.use(helmet());
 
-// CORS configuration - origins from environment variable
+// CORS configuration
 const allowedOrigins = [
   "http://localhost:5174",
   "http://localhost:5173",
+  "https://fin-ginie-8mpb.vercel.app",
   process.env.CORS_ORIGIN,
   process.env.FRONTEND_URL,
 ].filter(Boolean);
+
+console.log("Allowed CORS origins:", allowedOrigins);
 
 app.use(
   cors({
     origin: function (origin, callback) {
       // Allow requests with no origin (mobile apps, curl, etc)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+      
+      // Check if origin matches any allowed origin
+      const isAllowed = allowedOrigins.some(allowed => {
+        return origin === allowed || origin.startsWith(allowed);
+      });
+      
+      if (isAllowed) {
         return callback(null, true);
       }
+      
+      console.log("CORS blocked origin:", origin);
       return callback(null, false);
     },
     credentials: true,
