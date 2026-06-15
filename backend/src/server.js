@@ -11,23 +11,24 @@ const rateLimit = require("express-rate-limit");
 const connectDB = require("./config/database");
 const errorHandler = require("./middleware/errorHandler");
 
-// Routes
-const authRoutes = require("./routes/authRoutes");
-const chatRoutes = require("./routes/chatRoutes");
-const documentRoutes = require("./routes/documentRoutes");
-const userRoutes = require("./routes/userRoutes");
-const goalRoutes = require("./routes/goalRoutes");
-
 const app = express();
 
-// Database connection state for serverless
-let isConnected = false;
-const connectOnce = async () => {
-  if (!isConnected) {
-    await connectDB();
-    isConnected = true;
-    console.log("Database connected");
+// Lazy load routes to avoid initialization errors
+let authRoutes, chatRoutes, documentRoutes, userRoutes, goalRoutes;
+
+const loadRoutes = () => {
+  if (!authRoutes) {
+    authRoutes = require("./routes/authRoutes");
+    chatRoutes = require("./routes/chatRoutes");
+    documentRoutes = require("./routes/documentRoutes");
+    userRoutes = require("./routes/userRoutes");
+    goalRoutes = require("./routes/goalRoutes");
   }
+};
+
+// Database connection for serverless
+const connectOnce = async () => {
+  await connectDB();
 };
 
 // Security middleware
@@ -99,12 +100,27 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// API routes
-app.use("/api/auth", authRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/documents", documentRoutes);
-app.use("/api/user", userRoutes);
-app.use("/api/goals", goalRoutes);
+// API routes (lazy loaded)
+app.use("/api/auth", (req, res, next) => {
+  loadRoutes();
+  authRoutes(req, res, next);
+});
+app.use("/api/chat", (req, res, next) => {
+  loadRoutes();
+  chatRoutes(req, res, next);
+});
+app.use("/api/documents", (req, res, next) => {
+  loadRoutes();
+  documentRoutes(req, res, next);
+});
+app.use("/api/user", (req, res, next) => {
+  loadRoutes();
+  userRoutes(req, res, next);
+});
+app.use("/api/goals", (req, res, next) => {
+  loadRoutes();
+  goalRoutes(req, res, next);
+});
 
 // Error handler middleware
 app.use(errorHandler);
