@@ -33,9 +33,25 @@ const connectOnce = async () => {
 
 // Security middleware
 app.use(helmet());
+
+// CORS configuration
+const allowedOrigins = [
+  "http://localhost:5174",
+  "http://localhost:5173",
+  "https://fin-ginie.vercel.app",
+  process.env.CORS_ORIGIN,
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5174",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
